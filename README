@@ -1,0 +1,3 @@
+🎤 Open Speech Recording Web App
+A browser-based tool for collecting speech samples using JavaScript, HTML5, and Flask (Python). Users can record audio clips of randomized phrases, review and delete recordings, and submit them to a backend via a REST endpoint. Audio is saved in .ogg format, named according to keyword and sample index.
+Technologies used: JavaScript, HTML/CSS, Web Audio API, Flask, SQLite.
