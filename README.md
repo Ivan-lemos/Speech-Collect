@@ -15,7 +15,6 @@ A browser-based tool for collecting speech samples with randomized prompts. User
 - **Frontend:** JavaScript, HTML5, CSS, Web Audio API
 - **Backend:** Python, Flask
 - **Database:** SQLite
-- **Deployment:** Compatible with platforms like Render
 
 ## 🗂️ File Naming Convention
 
