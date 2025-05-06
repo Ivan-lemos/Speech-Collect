@@ -42,9 +42,9 @@ def submit():
 
 @app.route("/about")
 def about():
-    with open("README.txt", "r", encoding="utf-8") as f:
+    with open("TERMS.txt" , "r", encoding="utf-8") as f:
         readme_content = f.read()
-    return render_template("readme.html", content=readme_content)
+    return render_template("about.html", content=readme_content)
 
 
 @app.route("/instance/<path:filename>")
