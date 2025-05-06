@@ -15,6 +15,8 @@
         .recording-item audio { margin-right: 10px; }
         .hidden { display: none; }
     </style>
+    <a href="/about">{{ 'Sobre' if lang == 'pt' else 'About' }}</a>
+
 </head>
 <body>
     <header>
@@ -29,22 +31,22 @@
             Vamos gravar as seguintes palavras:<br>
             {{phrases}}<br>
             <hr>
-            Pressione <strong>Gravar</strong> para iniciar a gravação. Grave apenas a palavra mostrada na caixa abaixo quando solicitado (o botão de gravação alternará entre vermelho e cinza para indicar cada nova gravação e selecionará aleatoriamente palavras da sua lista para gravar).<br>
+            Pressione <strong>Gravar</strong> para iniciar a gravação. Grave apenas a palavra exibida no quadro quando for solicitado. O botão de gravação alternará entre vermelho e cinza para indicar cada nova gravação e selecionará palavras aleatoriamente da sua lista para registrar.<br>
             <hr>
-            Pressione <strong>Parar</strong> para interromper a gravação e, quando todas as palavras solicitadas forem concluídas, você poderá enviar as gravações.
+            Pressione <strong>Parar</strong> para interromper a gravação. Assim que todas as palavras solicitadas forem gravadas, você poderá enviar as gravações.
             <hr>
-            Escolha o número de amostras por palavra que gostaria de gravar:<br>
+            Informe a quantidade de vezes que deseja gravar cada palavra:<br>
         {% else %}
             We are training these words: <br>
             {{phrases}}<br>
             <hr>
-            Press <strong>Record</strong> to start recording. Record only the word shown in the box below when instructed (the record button will switch between red and grey to indicate each new recording and will randomly select words from your list to record).<br>
+            Press <strong>Record</strong> to start recording. Record only the word displayed in the box when prompted. The record button will switch between red and gray to indicate each new recording and will randomly select words from your list to be recorded.<br>
             <hr>
-            Press <strong>Stop</strong> to stop recording, and when all the requested words are completed you'll be able to submit the recordings.
+            Press <strong>Stop</strong> to stop recording. Once all requested words have been recorded, you will be able to submit your recordings.
             <hr>
-            Input the number of samples of each word you would like to record:<br>
+            Enter the number of times you want to record each word:<br>
         {% endif %}
-        <input type="text" id="input_samples" value="3">
+        <input type="number" id="input_samples" value="3" min="1" step="1">
     </p>
 
     <div id="status"></div>
@@ -60,11 +62,13 @@
 
     <script>
         const phrases = {{ phrases|tojson }};
-        const totalSamples = document.getElementById("input_samples").value; // número de vezes por palavra
         let recordings = [];
         let currentCount = 0;
         let isRecording = false;
         let mediaRecorder, audioChunks = [], currentPhrase = "";
+        let samplesPerWord = 3;
+
+        const recordCounters = {};  // <=== Contador por palavra
 
         const recordBtn = document.getElementById("recordBtn");
         const stopBtn = document.getElementById("stopBtn");
@@ -79,19 +83,25 @@
         }
 
         async function startCycle() {
+            console.log("Repetições por palavra:", samplesPerWord);
             isRecording = true;
             recordBtn.disabled = true;
             stopBtn.disabled = false;
             updatePhrase();
-            status.textContent = `${currentCount + 1} / ${phrases.length * totalSamples}`;
+            status.textContent = `${currentCount + 1} / ${phrases.length * samplesPerWord}`;
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             mediaRecorder = new MediaRecorder(stream);
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
 
             mediaRecorder.onstop = () => {
-                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                const blob = new Blob(audioChunks, { type: 'audio/ogg' });
                 const url = URL.createObjectURL(blob);
-                recordings.push({ phrase: currentPhrase, blob });
+
+                if (!recordCounters[currentPhrase]) recordCounters[currentPhrase] = 1;
+                const index = recordCounters[currentPhrase]++;
+                const filename = `${currentPhrase.replace(/\s+/g, '_')}_${String(index).padStart(3, '0')}.ogg`;
+
+                recordings.push({ phrase: currentPhrase, blob, filename });
 
                 const item = document.createElement("div");
                 item.className = "recording-item";
@@ -100,30 +110,36 @@
                 audio.controls = true;
                 audio.src = url;
 
+                const label = document.createElement("div");
+                label.textContent = filename;
+
                 const del = document.createElement("button");
                 del.textContent = "❌";
                 del.onclick = () => {
                     recordingsList.removeChild(item);
                     recordings = recordings.filter(r => r.blob !== blob);
-                    currentCount--;
-                    submitBtn.disabled = true;
-                    status.textContent = `${currentCount} / ${phrases.length * totalSamples}`;
+                    // ATENÇÃO: não alteramos currentCount aqui
+                    // submitBtn continua liberado se gravações já foram feitas
                 };
 
+                item.appendChild(label);
                 item.appendChild(audio);
                 item.appendChild(del);
                 recordingsList.appendChild(item);
 
                 currentCount++;
-                status.textContent = `${currentCount} / ${phrases.length * totalSamples}`;
+                status.textContent = `${currentCount} / ${phrases.length * samplesPerWord}`;
 
-                if (currentCount >= phrases.length * totalSamples) {
+                // ✅ Liberar botão de envio mesmo que áudios sejam apagados depois
+                if (currentCount >= phrases.length * samplesPerWord) {
                     stopBtn.disabled = true;
                     submitBtn.disabled = false;
+                    recordBtn.disabled = true;
                 } else {
-                    if (isRecording) setTimeout(startCycle, 2000); // pequena pausa antes da próxima gravação
+                    if (isRecording) setTimeout(startCycle, 2000);
                 }
             };
+
 
             audioChunks = [];
             mediaRecorder.start();
@@ -135,6 +151,7 @@
         }
 
         recordBtn.onclick = () => {
+            samplesPerWord = parseInt(document.getElementById("input_samples").value) || 3;
             isRecording = true;
             startCycle();
         };
@@ -154,12 +171,14 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             phrase: rec.phrase,
-                            audio: reader.result
+                            audio: reader.result,
+                            filename: rec.filename  // <-- Enviado para o backend
                         })
                     });
                 };
                 reader.readAsDataURL(rec.blob);
             }
+
             alert("{{ 'Gravações enviadas com sucesso! Obrigado ️😁' if lang == 'pt' else 'Recordings submitted successfully! Thanks 😁' }}");
             recordings = [];
             recordingsList.innerHTML = "";
@@ -167,6 +186,7 @@
             currentCount = 0;
             status.textContent = "";
         };
+
     </script>
 </body>
 </html>

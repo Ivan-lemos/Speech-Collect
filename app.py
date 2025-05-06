@@ -19,10 +19,10 @@ class Recording(db.Model):
 def index():
     lang = request.args.get('lang' , 'pt')
     phrases =[]
-    if lang == "EN":
+    if lang == "en":
         phrases = ["Hello World", "Hello Word", "Hello", "World"]
     else:
-        phrases = ["olá mundo" , "alô mundo" , "olá mudo" , "olá" , "mundo"]
+        phrases = ["Olá mundo" , "Alô mundo" , "Olá mudo" , "Olá" , "mundo"]
     return render_template('index.html' , phrases=phrases , lang=lang)
 
 
@@ -39,6 +39,13 @@ def submit():
     db.session.commit()
 
     return jsonify({'status': 'success'})
+
+@app.route("/about")
+def about():
+    with open("README.txt", "r", encoding="utf-8") as f:
+        readme_content = f.read()
+    return render_template("readme.html", content=readme_content)
+
 
 @app.route("/instance/<path:filename>")
 def deny_instance_access(filename):
