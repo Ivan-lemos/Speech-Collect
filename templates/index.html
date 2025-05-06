@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ 'Coletor de Voz' if lang == 'pt' else 'Voice Collector' }}</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        button { padding: 10px 20px; margin-top: 10px; cursor: pointer; border: none; border-radius: 5px; }
+        #recordBtn.recording { background-color: red; color: white; }
+        #recordBtn, #stopBtn, #submitBtn { background-color: #ccc; }
+        #phrase { font-size: 1.5rem; margin: 20px 0; text-align: center; }
+        #status { margin-top: 10px; font-weight: bold; }
+        .recording-item { display: flex; align-items: center; margin: 5px 0; }
+        .recording-item audio { margin-right: 10px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <h2>{{ 'Coletor de Voz' if lang == 'pt' else 'Voice Collector' }}</h2>
+        <div>
+            <a href="/?lang=pt">PT</a> | <a href="/?lang=en">EN</a>
+        </div>
+    </header>
+
+    <p>
+        {% if lang == 'pt' %}
+            Vamos gravar as seguintes palavras:<br>
+            {{phrases}}<br>
+            <hr>
+            Pressione <strong>Gravar</strong> para iniciar a gravação. Grave apenas a palavra mostrada na caixa abaixo quando solicitado (o botão de gravação alternará entre vermelho e cinza para indicar cada nova gravação e selecionará aleatoriamente palavras da sua lista para gravar).<br>
+            <hr>
+            Pressione <strong>Parar</strong> para interromper a gravação e, quando todas as palavras solicitadas forem concluídas, você poderá enviar as gravações.
+            <hr>
+            Escolha o número de amostras por palavra que gostaria de gravar:<br>
+        {% else %}
+            We are training these words: <br>
+            {{phrases}}<br>
+            <hr>
+            Press <strong>Record</strong> to start recording. Record only the word shown in the box below when instructed (the record button will switch between red and grey to indicate each new recording and will randomly select words from your list to record).<br>
+            <hr>
+            Press <strong>Stop</strong> to stop recording, and when all the requested words are completed you'll be able to submit the recordings.
+            <hr>
+            Input the number of samples of each word you would like to record:<br>
+        {% endif %}
+        <input type="text" id="input_samples" value="3">
+    </p>
+
+    <div id="status"></div>
+
+    <div id="phrase">---</div>
+
+    <button id="recordBtn"> 🎙️ {{ 'Gravar' if lang == 'pt' else 'Record' }}</button>
+    <button id="stopBtn" disabled>{{ 'Parar' if lang == 'pt' else 'Stop' }}</button>
+    <button id="submitBtn" disabled>{{ 'Enviar' if lang == 'pt' else 'Submit' }}</button>
+
+    <h3>{{ 'Gravações:' if lang == 'pt' else 'Recordings:' }}</h3>
+    <div id="recordingsList"></div>
+
+    <script>
+        const phrases = {{ phrases|tojson }};
+        const totalSamples = document.getElementById("input_samples").value; // número de vezes por palavra
+        let recordings = [];
+        let currentCount = 0;
+        let isRecording = false;
+        let mediaRecorder, audioChunks = [], currentPhrase = "";
+
+        const recordBtn = document.getElementById("recordBtn");
+        const stopBtn = document.getElementById("stopBtn");
+        const submitBtn = document.getElementById("submitBtn");
+        const phraseDiv = document.getElementById("phrase");
+        const recordingsList = document.getElementById("recordingsList");
+        const status = document.getElementById("status");
+
+        function updatePhrase() {
+            currentPhrase = phrases[Math.floor(Math.random() * phrases.length)];
+            phraseDiv.textContent = currentPhrase;
+        }
+
+        async function startCycle() {
+            isRecording = true;
+            recordBtn.disabled = true;
+            stopBtn.disabled = false;
+            updatePhrase();
+            status.textContent = `${currentCount + 1} / ${phrases.length * totalSamples}`;
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(audioChunks, { type: 'audio/webm' });
+                const url = URL.createObjectURL(blob);
+                recordings.push({ phrase: currentPhrase, blob });
+
+                const item = document.createElement("div");
+                item.className = "recording-item";
+
+                const audio = document.createElement("audio");
+                audio.controls = true;
+                audio.src = url;
+
+                const del = document.createElement("button");
+                del.textContent = "❌";
+                del.onclick = () => {
+                    recordingsList.removeChild(item);
+                    recordings = recordings.filter(r => r.blob !== blob);
+                    currentCount--;
+                    submitBtn.disabled = true;
+                    status.textContent = `${currentCount} / ${phrases.length * totalSamples}`;
+                };
+
+                item.appendChild(audio);
+                item.appendChild(del);
+                recordingsList.appendChild(item);
+
+                currentCount++;
+                status.textContent = `${currentCount} / ${phrases.length * totalSamples}`;
+
+                if (currentCount >= phrases.length * totalSamples) {
+                    stopBtn.disabled = true;
+                    submitBtn.disabled = false;
+                } else {
+                    if (isRecording) setTimeout(startCycle, 2000); // pequena pausa antes da próxima gravação
+                }
+            };
+
+            audioChunks = [];
+            mediaRecorder.start();
+            recordBtn.classList.add("recording");
+            setTimeout(() => {
+                mediaRecorder.stop();
+                recordBtn.classList.remove("recording");
+            }, 3000);
+        }
+
+        recordBtn.onclick = () => {
+            isRecording = true;
+            startCycle();
+        };
+
+        stopBtn.onclick = () => {
+            isRecording = false;
+            stopBtn.disabled = true;
+            recordBtn.disabled = false;
+        };
+
+        submitBtn.onclick = async () => {
+            for (let rec of recordings) {
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    await fetch("/submit", {
+                        method: "POST",
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            phrase: rec.phrase,
+                            audio: reader.result
+                        })
+                    });
+                };
+                reader.readAsDataURL(rec.blob);
+            }
+            alert("{{ 'Gravações enviadas com sucesso! Obrigado ️😁' if lang == 'pt' else 'Recordings submitted successfully! Thanks 😁' }}");
+            recordings = [];
+            recordingsList.innerHTML = "";
+            submitBtn.disabled = true;
+            currentCount = 0;
+            status.textContent = "";
+        };
+    </script>
+</body>
+</html>
+

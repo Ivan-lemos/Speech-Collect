@@ -1,0 +1,8 @@
+*.db
+instance/
+*.pyc
+__pycache__/
+.venv/
+*.webm
+*.wav
+.idea
